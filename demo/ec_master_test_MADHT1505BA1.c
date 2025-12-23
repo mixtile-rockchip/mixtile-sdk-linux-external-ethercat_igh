@@ -19,10 +19,18 @@
 
 /****************************************************************************/
 
+// TSN Mode Setting: only rk3588/rk3576 support tsn, other chip must be set to 0
+#define USE_TSN_MODE_EST 0
+#define USE_TSN_MODE_TBS 0
+
 // Application parameters
 // #define FREQUENCY 250
 #define FREQUENCY 1000
+#if (USE_TSN_MODE_EST || USE_TSN_MODE_TBS)
 #define CLOCK_TO_USE CLOCK_REALTIME
+#else
+#define CLOCK_TO_USE CLOCK_MONOTONIC
+#endif
 #define MEASURE_TIMING  1
 #define TARGET_VELOCITY        1124000 /*target velocity*/
 
@@ -413,8 +421,12 @@ void cyclic_task_velocity_mode()
     int32_t     cur_velocity;
     bool        print = false;
 
+#if USE_TSN_MODE_EST
     ec_est_sched_entry_t est_entries[2];
     ec_est_qopt_offload_t est_qopt;
+#elif USE_TSN_MODE_TBS
+    ec_tbs_qopt_offload_t tbs_qopt;
+#endif
 
     struct timespec startTime, endTime, lastStartTime = {};
     uint32_t period_ns = 0, exec_ns = 0, latency_ns = 0,
@@ -427,6 +439,7 @@ void cyclic_task_velocity_mode()
     latency_max_ns = 0;
     latency_min_ns = 0xffffffff;
 
+#if USE_TSN_MODE_EST
     est_entries[0].gate_mask = 0x2;
     est_entries[0].interval = 800000;
     est_entries[1].gate_mask = 0x1;
@@ -436,12 +449,20 @@ void cyclic_task_velocity_mode()
     est_qopt.enable = 1;
     est_qopt.entries = est_entries;
     est_qopt.cycle_time = TIMESPEC2NS(cycletime);
+#elif USE_TSN_MODE_TBS
+    tbs_qopt.enable = 1;
+    tbs_qopt.queue = 1;
+#endif
 
     clock_gettime(CLOCK_TO_USE, &lastStartTime);
     clock_gettime(CLOCK_TO_USE, &wakeupTime);
 
+#if USE_TSN_MODE_EST
     est_qopt.base_time = TIMESPEC2NS(wakeupTime) + est_qopt.cycle_time + 200000;
     ecrt_master_set_est(master, &est_qopt);
+#elif USE_TSN_MODE_TBS
+    ecrt_master_set_tbs(master, &tbs_qopt);
+#endif
 
     while(app_run) {
         wakeupTime = timespec_add(wakeupTime, cycletime);
@@ -452,7 +473,11 @@ void cyclic_task_velocity_mode()
         // It is a good idea to use the target time (not the measured time) as
         // application time, because it is more stable.
         //
+#if USE_TSN_MODE_TBS
         ecrt_master_application_time(master, TIMESPEC2NS(wakeupTime) + 200000);
+#else
+        ecrt_master_application_time(master, TIMESPEC2NS(wakeupTime));
+#endif
 
         /*Receive process data*/
         ecrt_master_receive(master);
