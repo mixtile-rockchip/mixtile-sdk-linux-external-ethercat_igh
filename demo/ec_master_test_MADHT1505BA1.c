@@ -19,6 +19,18 @@
 
 /****************************************************************************/
 
+// Xenomai Setting
+#define USE_XENOMAI_V3 0
+#if USE_XENOMAI_V3
+#define printf rt_printf
+#define fprintf rt_fprintf
+#define vprintf rt_vprintf
+#else
+#define printf printf
+#define fprintf fprintf
+#define vprintf vprintf
+#endif
+
 // TSN Mode Setting: only rk3588/rk3576 support tsn, other chip must be set to 0
 #define USE_TSN_MODE_EST 0
 #define USE_TSN_MODE_TBS 0
