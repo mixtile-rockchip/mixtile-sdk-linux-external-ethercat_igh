@@ -1250,8 +1250,10 @@ static void stmmac_free_tx_buffer(struct stmmac_priv *priv, u32 queue, int i)
 					 DMA_TO_DEVICE);
 	}
 
+	/* if tx_buffer is allocated / released by ec_master, don't free it here */
 	if (tx_q->tx_skbuff[i]) {
-		dev_kfree_skb_any(tx_q->tx_skbuff[i]);
+		if (!priv->ecdev)
+			dev_kfree_skb_any(tx_q->tx_skbuff[i]);
 		tx_q->tx_skbuff[i] = NULL;
 		tx_q->tx_skbuff_dma[i].buf = 0;
 		tx_q->tx_skbuff_dma[i].map_as_page = false;
@@ -2096,7 +2098,7 @@ static void stmmac_dma_interrupt(struct stmmac_priv *priv)
 	u32 channels_to_check = tx_channel_count > rx_channel_count ?
 				tx_channel_count : rx_channel_count;
 	u32 chan;
-	int status[max_t(u32, MTL_MAX_TX_QUEUES, MTL_MAX_RX_QUEUES)];
+	int status[MTL_MAX_TX_QUEUES > MTL_MAX_RX_QUEUES ? MTL_MAX_TX_QUEUES : MTL_MAX_RX_QUEUES];
 
 	/* Make sure we never check beyond our status buffer. */
 	if (WARN_ON_ONCE(channels_to_check > ARRAY_SIZE(status)))

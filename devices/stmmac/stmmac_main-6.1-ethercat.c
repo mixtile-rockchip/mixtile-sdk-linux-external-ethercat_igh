@@ -1535,9 +1535,10 @@ static void stmmac_free_tx_buffer(struct stmmac_priv *priv,
 	if (tx_q->tx_skbuff_dma[i].buf_type == STMMAC_TXBUF_T_XSK_TX)
 		tx_q->xsk_frames_done++;
 
-	if (tx_q->tx_skbuff[i] &&
-	    tx_q->tx_skbuff_dma[i].buf_type == STMMAC_TXBUF_T_SKB) {
-		dev_kfree_skb_any(tx_q->tx_skbuff[i]);
+	/* if tx_buffer is allocated / released by ec_master, don't free it here */
+	if (tx_q->tx_skbuff[i] && tx_q->tx_skbuff_dma[i].buf_type == STMMAC_TXBUF_T_SKB) {
+		if (!priv->ecdev)
+			dev_kfree_skb_any(tx_q->tx_skbuff[i]);
 		tx_q->tx_skbuff[i] = NULL;
 	}
 
@@ -2836,7 +2837,7 @@ static void stmmac_dma_interrupt(struct stmmac_priv *priv)
 	u32 channels_to_check = tx_channel_count > rx_channel_count ?
 				tx_channel_count : rx_channel_count;
 	u32 chan;
-	int status[max_t(u32, MTL_MAX_TX_QUEUES, MTL_MAX_RX_QUEUES)];
+	int status[MTL_MAX_TX_QUEUES > MTL_MAX_RX_QUEUES ? MTL_MAX_TX_QUEUES : MTL_MAX_RX_QUEUES];
 
 	/* Make sure we never check beyond our status buffer. */
 	if (WARN_ON_ONCE(channels_to_check > ARRAY_SIZE(status)))
@@ -3946,13 +3947,22 @@ static void stmmac_fpe_stop_wq(struct stmmac_priv *priv)
 static int stmmac_release(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	bool locked_flag = false;
 	u32 chan;
+
+	if (!rtnl_is_locked()) {
+		rtnl_lock();
+		locked_flag = true;
+	}
 
 	if (device_may_wakeup(priv->device))
 		phylink_speed_down(priv->phylink, false);
 	/* Stop and disconnect the PHY */
 	phylink_stop(priv->phylink);
 	phylink_disconnect_phy(priv->phylink);
+
+	if (locked_flag)
+		rtnl_unlock();
 
 	if (priv->plat->integrated_phy_power)
 		priv->plat->integrated_phy_power(priv->plat->bsp_priv, false);
